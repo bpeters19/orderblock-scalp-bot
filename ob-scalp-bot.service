@@ -1,0 +1,16 @@
+[Unit]
+Description=Order Block Scanner / Alert Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ob_scalp_bot
+EnvironmentFile=/root/ob_scalp_bot/.env
+ExecStart=/usr/bin/python3 /root/ob_scalp_bot/main.py
+Restart=always
+RestartSec=15
+StandardOutput=append:/var/log/ob_scalp_bot.log
+StandardError=append:/var/log/ob_scalp_bot.log
+
+[Install]
+WantedBy=multi-user.target
