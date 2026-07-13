@@ -87,3 +87,31 @@ journalctl -u ob-scalp-bot -f   # tail logs
   trusting live alerts, it's worth running `find_order_blocks` over
   historical bars for your watchlist and manually reviewing a sample of
   the zones it would have flagged.
+
+## Backtesting
+
+Two modes — pull real history from Alpaca, or test offline against a CSV:
+
+```bash
+# Alpaca mode (uses your .env keys)
+python3 backtest.py --symbols AAPL,MSFT,NVDA --days 90 --timeframe 15Min
+
+# Offline CSV mode (columns: timestamp,open,high,low,close,volume)
+python3 backtest.py --csv path/to/AAPL_15min.csv --symbol AAPL
+```
+
+**Important caveat**: this backtest is a SIMPLIFIED single-timeframe
+simulation (see `backtest_engine.py` docstring). It doesn't replicate the
+live bot's full 15m-zone / 5m-tap / 1m-confirm model — it approximates the
+lower-timeframe confirmation with "does the very next bar close in the
+trade direction." That means:
+- Live alerts should be equal or higher quality than what this shows
+  (fewer, more selective signals), since the real confirmation step is
+  stricter.
+- Treat these numbers as a sanity check on the core order-block/OTE logic
+  (are zones being drawn sensibly, is win rate/expectancy in a reasonable
+  ballpark), not as a guarantee of live performance.
+
+Results print a per-symbol and overall summary (win rate, average R
+multiple, expectancy in R) and write every simulated trade to
+`backtest_results.csv` for manual review.
