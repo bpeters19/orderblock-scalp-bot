@@ -115,3 +115,20 @@ trade direction." That means:
 Results print a per-symbol and overall summary (win rate, average R
 multiple, expectancy in R) and write every simulated trade to
 `backtest_results.csv` for manual review.
+
+## Visualizing order block zones
+
+Plots candles with detected order-block zones (green = bullish, red =
+bearish) and their OTE bands overlaid, so you can eyeball whether the
+logic is flagging sensible zones:
+
+```bash
+# Alpaca mode
+python3 plot_ob_zones.py --symbol AAPL --timeframe 15Min --days 30
+
+# Offline CSV mode
+python3 plot_ob_zones.py --csv path/to/AAPL_15min.csv --symbol AAPL
+```
+
+Saves a PNG (`<symbol>_ob_zones.png` by default) rather than opening an
+interactive window, since this is meant to run headless on a droplet too.
