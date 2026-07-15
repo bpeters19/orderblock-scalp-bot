@@ -44,6 +44,7 @@ class OrderBlock:
     event: str                 # 'BOS' or 'CHoCH'
     leg_start: float            # price where the impulse leg began (for OTE)
     leg_end: float               # price where the impulse leg ended (swing broken)
+    atr_at_formation: float = 0.0
     ote_low: float = field(init=False)
     ote_high: float = field(init=False)
     mitigated: bool = False
@@ -136,6 +137,7 @@ def find_order_blocks(
             event=event,
             leg_start=float(leg_start),
             leg_end=float(leg_end),
+            atr_at_formation=float(labeled["atr"].iloc[ob_idx]),
         )
 
         # Mitigation check: has price already fully closed through the zone,
