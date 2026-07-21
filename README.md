@@ -132,3 +132,14 @@ python3 plot_ob_zones.py --csv path/to/AAPL_15min.csv --symbol AAPL
 
 Saves a PNG (`<symbol>_ob_zones.png` by default) rather than opening an
 interactive window, since this is meant to run headless on a droplet too.
+
+### Overlaying projected long/short trades
+
+Add `--show-trades` to also draw the simulated entry, stop-loss, and
+take-profit levels for each zone (same simulation logic as
+`backtest.py`) — a long shows as an upward triangle, short as a downward
+triangle, with the outcome (win/loss/timeout) and R-multiple labeled:
+
+```bash
+python3 plot_ob_zones.py --symbol AAPL --days 30 --show-trades
+```
