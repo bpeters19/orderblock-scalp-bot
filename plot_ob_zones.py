@@ -49,40 +49,69 @@ def _ob_end_index(df: pd.DataFrame, ob, ob_idx: int) -> int:
 
 def _draw_trade_projection(ax, df: pd.DataFrame, trade, reward_multiple: float):
     """
-    Draws a projected long/short trade on the chart: entry marker, stop-loss
-    line (red), take-profit line (green), spanning from the entry bar out to
-    either the bar where the outcome resolved or `max_hold_bars` bars ahead.
+    Draws a TradingView-style "Long/Short Position" tool overlay:
+      - A shaded GREEN box from entry to target = the profit zone
+      - A shaded RED box from entry to stop = the risk zone
+      - A dashed entry line spanning the box width
+      - A stats label showing entry/target/stop prices, R:R ratio, and
+        the % move each level represents
+    Spans from the entry bar out to where the trade's outcome resolved
+    (or the hold window, if it timed out).
     """
     try:
         entry_idx = df.index.get_loc(trade.entry_at)
     except KeyError:
         return
 
-    end_idx = min(entry_idx + max(trade.bars_held, 1), len(df) - 1)
+    width = max(trade.bars_held, 1)
     is_long = trade.direction == "bullish"
+
+    risk = abs(trade.entry_price - trade.stop_price)
+    reward = abs(trade.target_price - trade.entry_price)
+    risk_pct = risk / trade.entry_price * 100
+    reward_pct = reward / trade.entry_price * 100
+
+    # Profit zone (entry -> target) and risk zone (entry -> stop),
+    # stacked on whichever side is correct for long vs short
+    profit_low = trade.entry_price if is_long else trade.target_price
+    profit_high = trade.target_price if is_long else trade.entry_price
+    risk_low = trade.stop_price if is_long else trade.entry_price
+    risk_high = trade.entry_price if is_long else trade.stop_price
+
+    profit_box = patches.Rectangle(
+        (entry_idx, profit_low), width, profit_high - profit_low,
+        facecolor="#26a69a", edgecolor="#26a69a", alpha=0.35, linewidth=1, zorder=4,
+    )
+    risk_box = patches.Rectangle(
+        (entry_idx, risk_low), width, risk_high - risk_low,
+        facecolor="#ef5350", edgecolor="#ef5350", alpha=0.35, linewidth=1, zorder=4,
+    )
+    ax.add_patch(profit_box)
+    ax.add_patch(risk_box)
+
+    # Entry line
+    ax.plot([entry_idx, entry_idx + width], [trade.entry_price, trade.entry_price],
+             "-", color="#333333", linewidth=1.2, zorder=5)
+
     direction_label = "LONG" if is_long else "SHORT"
-    marker = "^" if is_long else "v"
-    marker_color = "#1f77b4"
-
-    # Entry marker
-    ax.plot(entry_idx, trade.entry_price, marker=marker, markersize=10,
-             color=marker_color, zorder=5)
-
-    # Stop-loss line (red) and take-profit line (green)
-    ax.plot([entry_idx, end_idx], [trade.stop_price, trade.stop_price],
-             "-", color="#d62728", linewidth=1.3, alpha=0.85)
-    ax.plot([entry_idx, end_idx], [trade.target_price, trade.target_price],
-             "-", color="#2ca02c", linewidth=1.3, alpha=0.85)
-
-    outcome_color = {"win": "#2ca02c", "loss": "#d62728", "timeout": "#7f7f7f"}[trade.outcome]
+    outcome_color = {"win": "#26a69a", "loss": "#ef5350", "timeout": "#787b86"}[trade.outcome]
+    rr_text = (
+        f"{direction_label}  R:R 1:{reward_multiple:.1f}\n"
+        f"Target {trade.target_price:.2f} (+{reward_pct:.2f}%)\n"
+        f"Entry  {trade.entry_price:.2f}\n"
+        f"Stop   {trade.stop_price:.2f} (-{risk_pct:.2f}%)\n"
+        f"Result: {trade.outcome} ({trade.r_multiple:+.1f}R)"
+    )
     ax.annotate(
-        f"{direction_label} ({trade.outcome}, {trade.r_multiple:+.1f}R)",
-        xy=(entry_idx, trade.entry_price),
-        xytext=(5, -12 if is_long else 10),
+        rr_text,
+        xy=(entry_idx + width, trade.entry_price),
+        xytext=(6, 0),
         textcoords="offset points",
-        fontsize=7,
-        color=outcome_color,
-        weight="bold",
+        fontsize=6.5,
+        color="#222222",
+        va="center",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=outcome_color, linewidth=1, alpha=0.9),
+        zorder=6,
     )
 
 
