@@ -58,7 +58,7 @@ def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
     )
 
     lvl = calc_ob_levels(ob)
-    entry, sl, tp1, tp2 = lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"]
+    entry, sl, tp1, tp2, risk = lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"], lvl["risk"]
 
     risk_dollars_budget = config.ACCOUNT_EQUITY * (config.RISK_PER_TRADE_PCT / 100)
     shares = int(risk_dollars_budget / risk) if risk > 0 else 0
