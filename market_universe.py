@@ -12,10 +12,13 @@ fetch fails, so the bot never crashes from a network hiccup.
 """
 
 from __future__ import annotations
+import io
 import json
 import os
 import time
 import pandas as pd
+import requests
+import certifi
 
 import config
 
@@ -47,14 +50,25 @@ def _save_cache(sp500: list[str], nasdaq100: list[str]) -> None:
         pass  # cache is best-effort only
 
 
+def _get_html(url: str) -> str:
+    resp = requests.get(url, verify=certifi.where(), timeout=20,
+                        headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    return resp.text
+
+
 def _fetch_sp500() -> list[str]:
-    tables = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
+    tables = pd.read_html(io.StringIO(_get_html(
+        "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    )))
     df = tables[0]
     return sorted(df["Symbol"].str.replace(".", "-", regex=False).tolist())
 
 
 def _fetch_nasdaq100() -> list[str]:
-    tables = pd.read_html("https://en.wikipedia.org/wiki/Nasdaq-100")
+    tables = pd.read_html(io.StringIO(_get_html(
+        "https://en.wikipedia.org/wiki/Nasdaq-100"
+    )))
     for t in tables:
         cols = [c.lower() for c in t.columns.astype(str)]
         if any("ticker" in c or "symbol" in c for c in cols):
@@ -71,18 +85,21 @@ def get_core_watchlist() -> list[str]:
     """
     cached = _load_cache()
     if cached:
-        return sorted(set(cached["sp500"]) | set(cached["nasdaq100"]))
+        symbols = sorted(set(cached["sp500"]) | set(cached["nasdaq100"]))
+    else:
+        try:
+            sp500 = _fetch_sp500()
+            nasdaq100 = _fetch_nasdaq100()
+            if not sp500:
+                raise ValueError("Empty S&P 500 fetch")
+            _save_cache(sp500, nasdaq100)
+            symbols = sorted(set(sp500) | set(nasdaq100))
+        except Exception as e:
+            print(f"[market_universe] Falling back to static CORE_WATCHLIST ({e})")
+            symbols = list(config.CORE_WATCHLIST)
 
-    try:
-        sp500 = _fetch_sp500()
-        nasdaq100 = _fetch_nasdaq100()
-        if not sp500:
-            raise ValueError("Empty S&P 500 fetch")
-        _save_cache(sp500, nasdaq100)
-        return sorted(set(sp500) | set(nasdaq100))
-    except Exception as e:
-        print(f"[market_universe] Falling back to static CORE_WATCHLIST ({e})")
-        return list(config.CORE_WATCHLIST)
+    # Alpaca rejects class-share tickers that use hyphens (BRK-B, BF-B etc.)
+    return [s for s in symbols if "-" not in s]
 
 
 def get_movers(data_feed) -> list[str]:
@@ -99,7 +116,11 @@ def get_movers(data_feed) -> list[str]:
     # dedicated screener API (e.g. Finviz, Polygon's /v2/snapshot/gainers-losers)
     # once you decide on a paid data source.
     universe = get_core_watchlist()
-    snapshots = data_feed.get_snapshots(universe)
+    try:
+        snapshots = data_feed.get_snapshots(universe)
+    except Exception as e:
+        print(f"[market_universe] get_snapshots failed, skipping movers: {e}")
+        return []
 
     movers = []
     for symbol, snap in snapshots.items():

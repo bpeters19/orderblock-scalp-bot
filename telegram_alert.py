@@ -26,6 +26,26 @@ def send_alert(text: str) -> None:
         print(f"[telegram_alert] Failed to send: {e}")
 
 
+def calc_ob_levels(ob) -> dict:
+    """Extract entry/SL/TP levels from an OrderBlock. Shared by alert formatter and TV queue."""
+    ote_mid = (min(ob.ote_low, ob.ote_high) + max(ob.ote_low, ob.ote_high)) / 2
+    atr_buf = 0.25 * ob.atr_at_formation
+    if ob.direction == "bullish":
+        entry = ote_mid
+        sl = ob.zone_low - atr_buf
+        risk = entry - sl
+        tp1 = ob.leg_end
+        tp2 = tp1 + risk
+    else:
+        entry = ote_mid
+        sl = ob.zone_high + atr_buf
+        risk = sl - entry
+        tp1 = ob.leg_end
+        tp2 = tp1 - risk
+    rr = round((tp1 - entry) / risk, 1) if ob.direction == "bullish" else round((entry - tp1) / risk, 1)
+    return {"entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "risk": risk, "rr": rr}
+
+
 def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
     arrow = "🟢 BUY" if ob.direction == "bullish" else "🔴 SELL"
     ote_flag = "✅ inside OTE" if ob.overlaps_ote else "⚠️ outside OTE"
@@ -35,23 +55,8 @@ def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
         else ""
     )
 
-    # SL/TP levels
-    ote_mid = (min(ob.ote_low, ob.ote_high) + max(ob.ote_low, ob.ote_high)) / 2
-    atr_buf = 0.25 * ob.atr_at_formation  # volatility-scaled buffer
-    if ob.direction == "bullish":
-        entry = ote_mid
-        sl = ob.zone_low - atr_buf
-        risk = entry - sl
-        tp1 = ob.leg_end                          # broken swing — structural SMC target
-        tp2 = tp1 + risk                           # extended target (1R beyond TP1)
-    else:
-        entry = ote_mid
-        sl = ob.zone_high + atr_buf
-        risk = sl - entry
-        tp1 = ob.leg_end
-        tp2 = tp1 - risk
-
-    actual_rr = round((tp1 - entry) / risk, 1) if ob.direction == "bullish" else round((entry - tp1) / risk, 1)
+    lvl = calc_ob_levels(ob)
+    entry, sl, tp1, tp2, actual_rr = lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"], lvl["rr"]
 
     risk_dollars_budget = config.ACCOUNT_EQUITY * (config.RISK_PER_TRADE_PCT / 100)
     shares = int(risk_dollars_budget / risk) if risk > 0 else 0

@@ -27,7 +27,9 @@ from data_feed import DataFeed
 from order_blocks import find_order_blocks, OrderBlock
 from structure import label_structure
 from market_universe import get_core_watchlist, get_movers
-from telegram_alert import send_alert, format_ob_alert
+from telegram_alert import send_alert, format_ob_alert, calc_ob_levels
+import tv_queue
+import tv_draw
 
 _SEEN_PATH = os.path.join(os.path.dirname(__file__), ".seen_alerts.json")
 
@@ -114,6 +116,9 @@ def scan_symbol(feed: DataFeed, symbol: str, tier: str, seen: set[str]) -> None:
 
             msg = format_ob_alert(ob, tier=tier, confirm_tf_event=confirm_event)
             send_alert(msg)
+            lvl = calc_ob_levels(ob)
+            tv_queue.push_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
+            tv_draw.draw_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             seen.add(key)
 
     except Exception:
@@ -141,19 +146,62 @@ def run_once(feed: DataFeed, seen: set[str]) -> None:
     _save_seen(seen)
 
 
-def main() -> None:
-    feed = DataFeed()
-    seen = _load_seen()
-    send_alert("✅ Order Block scanner started.")
+_LOCK_PATH = os.path.join(os.path.dirname(__file__), ".bot.lock")
 
-    while True:
+
+def _acquire_lock() -> bool:
+    """Returns True if this is the only running instance, False otherwise."""
+    if os.path.exists(_LOCK_PATH):
         try:
-            run_once(feed, seen)
-        except Exception:
-            print("[main] Error in scan cycle:")
-            traceback.print_exc()
-        time.sleep(config.SCAN_INTERVAL_SECONDS)
+            with open(_LOCK_PATH) as f:
+                pid = int(f.read().strip())
+            # Check if that PID is still alive
+            import signal
+            os.kill(pid, 0)
+            return False  # process exists — another instance is running
+        except (ValueError, OSError, SystemError):
+            pass  # stale lock — process is gone (SystemError on Windows)
+    with open(_LOCK_PATH, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def main() -> None:
+    if not _acquire_lock():
+        print("[main] Another instance is already running. Exiting.")
+        return
+
+    try:
+        feed = DataFeed()
+        seen = _load_seen()
+        send_alert("✅ Order Block scanner started.")
+
+        while True:
+            try:
+                run_once(feed, seen)
+            except Exception:
+                print("[main] Error in scan cycle:")
+                traceback.print_exc()
+            time.sleep(config.SCAN_INTERVAL_SECONDS)
+    finally:
+        try:
+            os.remove(_LOCK_PATH)
+        except OSError:
+            pass
+
+
+_LOG_PATH = os.path.join(os.path.dirname(__file__), "bot.log")
+
+
+def _redirect_output() -> None:
+    """Redirect stdout/stderr to bot.log so the process is self-contained
+    when launched detached (no inherited file handles from parent)."""
+    import sys
+    log = open(_LOG_PATH, "a", buffering=1)
+    sys.stdout = log
+    sys.stderr = log
 
 
 if __name__ == "__main__":
+    _redirect_output()
     main()
