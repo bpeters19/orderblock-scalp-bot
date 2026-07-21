@@ -179,17 +179,20 @@ def run_once(feed: DataFeed, seen: set[str], cooldown: dict[str, float]) -> None
 
     for symbol in core:
         scan_symbol(feed, symbol, tier="core", seen=seen, cooldown=cooldown)
+        time.sleep(0.4)  # stay under Alpaca free-tier rate limit (200 req/min)
 
     for symbol in movers:
         if symbol in core:
             continue  # already scanned in core tier
         scan_symbol(feed, symbol, tier="mover", seen=seen, cooldown=cooldown)
+        time.sleep(0.15)
 
     _save_seen(seen)
     _save_cooldown(cooldown)
 
 
 _LOCK_PATH = os.path.join(os.path.dirname(__file__), ".bot.lock")
+_STARTUP_TS_PATH = os.path.join(os.path.dirname(__file__), ".bot_started_at")
 
 
 def _acquire_lock() -> bool:
@@ -209,6 +212,28 @@ def _acquire_lock() -> bool:
     return True
 
 
+_STARTUP_COOLDOWN_SECONDS = 600  # 10 minutes
+
+
+def _send_startup_alert() -> None:
+    """Send startup message only if we haven't sent one recently."""
+    now = time.time()
+    try:
+        if os.path.exists(_STARTUP_TS_PATH):
+            last = float(open(_STARTUP_TS_PATH).read().strip())
+            if now - last < _STARTUP_COOLDOWN_SECONDS:
+                print(f"[main] Startup alert suppressed (last sent {int(now - last)}s ago)")
+                return
+    except Exception:
+        pass
+    send_alert("✅ Order Block scanner started.")
+    try:
+        with open(_STARTUP_TS_PATH, "w") as f:
+            f.write(str(now))
+    except Exception:
+        pass
+
+
 def main() -> None:
     if not _acquire_lock():
         print("[main] Another instance is already running. Exiting.")
@@ -218,7 +243,10 @@ def main() -> None:
         feed = DataFeed()
         seen = _load_seen()
         cooldown = _load_cooldown()
-        send_alert("✅ Order Block scanner started.")
+
+        # Only send startup alert if we haven't sent one in the last 10 minutes
+        # (prevents spam when the bot is restarted rapidly during development)
+        _send_startup_alert()
 
         while True:
             try:
