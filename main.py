@@ -32,6 +32,7 @@ import tv_queue
 import tv_draw
 
 _SEEN_PATH = os.path.join(os.path.dirname(__file__), ".seen_alerts.json")
+_COOLDOWN_PATH = os.path.join(os.path.dirname(__file__), ".symbol_cooldown.json")
 
 
 def _load_seen() -> set[str]:
@@ -47,13 +48,41 @@ def _load_seen() -> set[str]:
 def _save_seen(seen: set[str]) -> None:
     try:
         with open(_SEEN_PATH, "w") as f:
-            json.dump(list(seen)[-2000:], f)  # cap growth
+            json.dump(sorted(seen)[-2000:], f)  # cap growth; sorted for stable output
+    except Exception:
+        pass
+
+
+def _load_cooldown() -> dict[str, float]:
+    """Returns {symbol: expiry_unix_ts}. Prunes expired entries on load."""
+    if os.path.exists(_COOLDOWN_PATH):
+        try:
+            with open(_COOLDOWN_PATH) as f:
+                raw: dict = json.load(f)
+            now = time.time()
+            return {k: v for k, v in raw.items() if v > now}
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_cooldown(cooldown: dict[str, float]) -> None:
+    try:
+        now = time.time()
+        active = {k: v for k, v in cooldown.items() if v > now}
+        with open(_COOLDOWN_PATH, "w") as f:
+            json.dump(active, f)
     except Exception:
         pass
 
 
 def _ob_key(ob: OrderBlock) -> str:
-    return f"{ob.symbol}|{ob.direction}|{ob.formed_at}|{round(ob.zone_low, 2)}"
+    # Use integer Unix timestamp so the key is timezone-representation-agnostic
+    try:
+        formed_ts = int(ob.formed_at.timestamp())
+    except Exception:
+        formed_ts = str(ob.formed_at)
+    return f"{ob.symbol}|{ob.direction}|{formed_ts}|{ob.zone_low:.4f}"
 
 
 def _check_confirmation(feed: DataFeed, symbol: str, direction: str) -> str | None:
@@ -87,8 +116,16 @@ def _price_in_zone_recently(feed: DataFeed, symbol: str, ob: OrderBlock) -> bool
     ).any()
 
 
-def scan_symbol(feed: DataFeed, symbol: str, tier: str, seen: set[str]) -> None:
+def scan_symbol(
+    feed: DataFeed, symbol: str, tier: str,
+    seen: set[str], cooldown: dict[str, float],
+) -> None:
     try:
+        # Per-symbol cooldown: skip entirely if we alerted this symbol recently
+        cooldown_exp = cooldown.get(symbol, 0)
+        if time.time() < cooldown_exp:
+            return
+
         structure_bars = feed.get_bars(symbol, config.STRUCTURE_TF, limit=150)
         if structure_bars.empty or len(structure_bars) < 20:
             return
@@ -123,13 +160,15 @@ def scan_symbol(feed: DataFeed, symbol: str, tier: str, seen: set[str]) -> None:
             tv_queue.push_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             tv_draw.draw_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             seen.add(key)
+            cooldown[symbol] = time.time() + config.SYMBOL_COOLDOWN_MINUTES * 60
+            break  # one alert per symbol per cooldown window — stop after first hit
 
     except Exception:
         print(f"[scan_symbol] Error scanning {symbol}:")
         traceback.print_exc()
 
 
-def run_once(feed: DataFeed, seen: set[str]) -> None:
+def run_once(feed: DataFeed, seen: set[str], cooldown: dict[str, float]) -> None:
     core = get_core_watchlist()
     movers = get_movers(feed)
 
@@ -139,14 +178,15 @@ def run_once(feed: DataFeed, seen: set[str]) -> None:
     )
 
     for symbol in core:
-        scan_symbol(feed, symbol, tier="core", seen=seen)
+        scan_symbol(feed, symbol, tier="core", seen=seen, cooldown=cooldown)
 
     for symbol in movers:
         if symbol in core:
             continue  # already scanned in core tier
-        scan_symbol(feed, symbol, tier="mover", seen=seen)
+        scan_symbol(feed, symbol, tier="mover", seen=seen, cooldown=cooldown)
 
     _save_seen(seen)
+    _save_cooldown(cooldown)
 
 
 _LOCK_PATH = os.path.join(os.path.dirname(__file__), ".bot.lock")
@@ -177,11 +217,12 @@ def main() -> None:
     try:
         feed = DataFeed()
         seen = _load_seen()
+        cooldown = _load_cooldown()
         send_alert("✅ Order Block scanner started.")
 
         while True:
             try:
-                run_once(feed, seen)
+                run_once(feed, seen, cooldown)
             except Exception:
                 print("[main] Error in scan cycle:")
                 traceback.print_exc()

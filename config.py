@@ -73,3 +73,4 @@ DEFAULT_RISK_REWARD_TARGET = 2.0  # used only to display a suggested TP distance
 ACCOUNT_EQUITY = float(os.environ.get("ACCOUNT_EQUITY", 100_000))  # paper acct default
 RISK_PER_TRADE_PCT = 1.0  # % of account equity risked per trade idea
 MIN_RISK_DOLLARS = 0.75   # skip signals where SL distance < this (filters low-price noise)
+SYMBOL_COOLDOWN_MINUTES = 60  # don't re-alert the same symbol within this window
