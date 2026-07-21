@@ -27,23 +27,25 @@ def send_alert(text: str) -> None:
 
 
 def calc_ob_levels(ob) -> dict:
-    """Extract entry/SL/TP levels from an OrderBlock. Shared by alert formatter and TV queue."""
+    """Extract entry/SL/TP levels from an OrderBlock. Shared by alert formatter and TV queue.
+
+    TP1 = 2:1 R/R, TP2 = 3:1 R/R (fixed multiples so targets are always meaningful).
+    """
     ote_mid = (min(ob.ote_low, ob.ote_high) + max(ob.ote_low, ob.ote_high)) / 2
     atr_buf = 0.25 * ob.atr_at_formation
     if ob.direction == "bullish":
         entry = ote_mid
         sl = ob.zone_low - atr_buf
         risk = entry - sl
-        tp1 = ob.leg_end
-        tp2 = tp1 + risk
+        tp1 = entry + 2 * risk
+        tp2 = entry + 3 * risk
     else:
         entry = ote_mid
         sl = ob.zone_high + atr_buf
         risk = sl - entry
-        tp1 = ob.leg_end
-        tp2 = tp1 - risk
-    rr = round((tp1 - entry) / risk, 1) if ob.direction == "bullish" else round((entry - tp1) / risk, 1)
-    return {"entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "risk": risk, "rr": rr}
+        tp1 = entry - 2 * risk
+        tp2 = entry - 3 * risk
+    return {"entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "risk": risk, "rr": 2.0}
 
 
 def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
@@ -56,7 +58,7 @@ def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
     )
 
     lvl = calc_ob_levels(ob)
-    entry, sl, tp1, tp2, actual_rr = lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"], lvl["rr"]
+    entry, sl, tp1, tp2 = lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"]
 
     risk_dollars_budget = config.ACCOUNT_EQUITY * (config.RISK_PER_TRADE_PCT / 100)
     shares = int(risk_dollars_budget / risk) if risk > 0 else 0
@@ -71,8 +73,8 @@ def format_ob_alert(ob, tier: str, confirm_tf_event: str | None = None) -> str:
         f"\n"
         f"📍 *Entry:* `{entry:.2f}` (OTE mid)\n"
         f"🛑 *Stop Loss:* `{sl:.2f}` (zone far side − 0.25×ATR)\n"
-        f"🎯 *TP1:* `{tp1:.2f}` (broken swing · {actual_rr}R)\n"
-        f"🎯 *TP2:* `{tp2:.2f}` (extended +1R)\n"
+        f"🎯 *TP1:* `{tp1:.2f}` (2R)\n"
+        f"🎯 *TP2:* `{tp2:.2f}` (3R)\n"
         f"📐 *Suggested size:* `{shares:,} sh` (risking {config.RISK_PER_TRADE_PCT:.1f}% / ${dollar_risk:,.0f} of ${config.ACCOUNT_EQUITY:,.0f})\n"
         f"_Not financial advice — verify on your chart before entering._"
     )

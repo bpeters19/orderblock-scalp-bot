@@ -114,9 +114,12 @@ def scan_symbol(feed: DataFeed, symbol: str, tier: str, seen: set[str]) -> None:
             if not confirm_event:
                 continue
 
+            lvl = calc_ob_levels(ob)
+            if lvl["risk"] < config.MIN_RISK_DOLLARS:
+                continue  # SL too tight — not worth the commission/spread
+
             msg = format_ob_alert(ob, tier=tier, confirm_tf_event=confirm_event)
             send_alert(msg)
-            lvl = calc_ob_levels(ob)
             tv_queue.push_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             tv_draw.draw_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             seen.add(key)
