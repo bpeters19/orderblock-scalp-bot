@@ -71,6 +71,13 @@ def _draw_trade_projection(ax, df: pd.DataFrame, trade, reward_multiple: float):
     risk_pct = risk / trade.entry_price * 100
     reward_pct = reward / trade.entry_price * 100
 
+    # Position sizing (informational only) — sized so that a stop-out risks
+    # RISK_PER_TRADE_PCT of ACCOUNT_EQUITY
+    risk_dollars_budget = config.ACCOUNT_EQUITY * (config.RISK_PER_TRADE_PCT / 100)
+    shares = int(risk_dollars_budget / risk) if risk > 0 else 0
+    dollar_risk = shares * risk
+    dollar_reward = shares * reward
+
     # Profit zone (entry -> target) and risk zone (entry -> stop),
     # stacked on whichever side is correct for long vs short
     profit_low = trade.entry_price if is_long else trade.target_price
@@ -97,9 +104,10 @@ def _draw_trade_projection(ax, df: pd.DataFrame, trade, reward_multiple: float):
     outcome_color = {"win": "#26a69a", "loss": "#ef5350", "timeout": "#787b86"}[trade.outcome]
     rr_text = (
         f"{direction_label}  R:R 1:{reward_multiple:.1f}\n"
-        f"Target {trade.target_price:.2f} (+{reward_pct:.2f}%)\n"
+        f"Target {trade.target_price:.2f} (+{reward_pct:.2f}%, +${dollar_reward:,.0f})\n"
         f"Entry  {trade.entry_price:.2f}\n"
-        f"Stop   {trade.stop_price:.2f} (-{risk_pct:.2f}%)\n"
+        f"Stop   {trade.stop_price:.2f} (-{risk_pct:.2f}%, -${dollar_risk:,.0f})\n"
+        f"Size   {shares:,} sh (risking {config.RISK_PER_TRADE_PCT:.1f}% of ${config.ACCOUNT_EQUITY:,.0f})\n"
         f"Result: {trade.outcome} ({trade.r_multiple:+.1f}R)"
     )
     ax.annotate(

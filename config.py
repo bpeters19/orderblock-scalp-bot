@@ -64,3 +64,11 @@ MOVERS_MIN_PCT_CHANGE = 3.0  # only consider movers up/down at least this %
 # Risk framing shown in the alert (informational only — you decide sizing)
 # ---------------------------------------------------------------------------
 DEFAULT_RISK_REWARD_TARGET = 2.0  # used only to display a suggested TP distance
+
+# ---------------------------------------------------------------------------
+# Position sizing (informational only — displayed in alerts/charts, not
+# used to place any real trades). Adjust ACCOUNT_EQUITY to match your
+# actual account size for the dollar figures to mean anything.
+# ---------------------------------------------------------------------------
+ACCOUNT_EQUITY = float(os.environ.get("ACCOUNT_EQUITY", 100_000))  # paper acct default
+RISK_PER_TRADE_PCT = 1.0  # % of account equity risked per trade idea
