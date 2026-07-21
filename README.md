@@ -143,3 +143,13 @@ triangle, with the outcome (win/loss/timeout) and R-multiple labeled:
 ```bash
 python3 plot_ob_zones.py --symbol AAPL --days 30 --show-trades
 ```
+
+## Position sizing
+
+`config.py` has two new settings:
+- `ACCOUNT_EQUITY` — set via env var or edit directly; defaults to $100,000 (paper account default)
+- `RISK_PER_TRADE_PCT` — % of equity risked per trade idea (default 1%)
+
+Both the chart overlay (`--show-trades`) and live Telegram alerts now show
+a suggested share size and dollar risk/reward based on these settings —
+informational only, doesn't place any trades.
