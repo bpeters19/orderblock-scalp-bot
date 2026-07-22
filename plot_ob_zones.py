@@ -26,6 +26,7 @@ import pandas as pd
 
 import config
 from order_blocks import find_order_blocks
+from telegram_alert import calc_ob_levels, calc_position_size
 from backtest import load_csv, load_from_alpaca
 from backtest_engine import backtest_symbol
 
@@ -71,10 +72,8 @@ def _draw_trade_projection(ax, df: pd.DataFrame, trade, reward_multiple: float):
     risk_pct = risk / trade.entry_price * 100
     reward_pct = reward / trade.entry_price * 100
 
-    # Position sizing (informational only) — sized so that a stop-out risks
-    # RISK_PER_TRADE_PCT of ACCOUNT_EQUITY
-    risk_dollars_budget = config.ACCOUNT_EQUITY * (config.RISK_PER_TRADE_PCT / 100)
-    shares = int(risk_dollars_budget / risk) if risk > 0 else 0
+    # Position sizing — use shared helper so numbers always match live alerts.
+    shares = calc_position_size(risk)
     dollar_risk = shares * risk
     dollar_reward = shares * reward
 

@@ -3,8 +3,12 @@
 Scans stocks for order-block setups (mechanical SMC/order-block trading —
 the last opposing candle before a structure-breaking move) and sends you
 a Telegram alert when a valid, unmitigated zone is tapped with lower-timeframe
-confirmation. **It only reads market data and sends notifications — it never
-places trades.** You decide whether to take the alert.
+confirmation.
+
+By default the bot is **alert-only** — it reads market data and sends
+notifications, and you decide whether to enter. Optionally it can
+auto-submit bracket orders to an Alpaca paper account — see
+[Auto-Execution](#auto-execution) below.
 
 ## How the logic works
 
@@ -68,6 +72,56 @@ journalctl -u ob-scalp-bot -f   # tail logs
 | `MAX_OB_AGE_BARS` | Ignore stale zones older than this many structure-TF bars |
 | `MOVERS_MIN_PRICE` / `MOVERS_MIN_AVG_VOLUME` / `MOVERS_MIN_PCT_CHANGE` | Filters for tier-2 movers scan |
 | `SCAN_INTERVAL_SECONDS` | How often the loop runs |
+| `ACCOUNT_EQUITY` / `RISK_PER_TRADE_PCT` | Position sizing base (also used by executor) |
+
+## Auto-Execution
+
+The bot can optionally submit bracket orders automatically when a setup fires.
+This is disabled by default and only targets the Alpaca **paper** account.
+
+### How it works
+
+When `AUTO_EXECUTE_ENABLED=true`, after each valid alert the bot submits a
+**bracket limit order** via Alpaca's Trading API:
+
+- **Entry**: limit order at the OTE-mid price (same as the alert's entry level)
+- **Stop-loss**: stop order at the zone far side minus 0.25 × ATR
+- **Take-profit**: limit order at the 3R target (TP2)
+- **Size**: same share count shown in the Telegram alert
+
+TP1 (2R) is shown in the alert as informational — it is not an automatic
+partial close. The bracket closes the full position at TP2 or SL.
+
+The Telegram alert always fires regardless of execution status, and will note
+whether the trade was submitted, skipped (with reason), or errored.
+
+### Enabling
+
+Set in your `.env` or environment:
+
+```bash
+AUTO_EXECUTE_ENABLED=true
+TRADING_MODE=paper          # default — safe
+MAX_CONCURRENT_POSITIONS=5  # optional, default 5
+MAX_DAILY_TRADES=10         # optional, default 10
+```
+
+### Safety controls (non-negotiable)
+
+| Control | Behaviour |
+|---|---|
+| `AUTO_EXECUTE_ENABLED=false` (default) | No orders ever submitted |
+| `TRADING_MODE=paper` (default) | Uses Alpaca paper account |
+| `TRADING_MODE=live` | Requires `LIVE_TRADING_CONFIRMED = True` **in code** — env var alone is not enough. Two separate explicit opt-ins required. |
+| `MAX_CONCURRENT_POSITIONS` | Checked live via Alpaca API before each order; skips if at cap |
+| `MAX_DAILY_TRADES` | Hard cap on new positions per trading day (resets at midnight UTC) |
+| Kill switch | `touch .trading_halted` halts all execution immediately; alerts still fire. `rm .trading_halted` resumes. |
+
+### Trade log
+
+Every order submission, skip, and error is written to `trade_log.jsonl`
+(one JSON record per line) in addition to stdout. Fields: `ts`, `symbol`,
+`direction`, `shares`, `entry`, `sl`, `tp2`, `status`, `reason`, `order_id`.
 
 ## Known limitations / next steps
 

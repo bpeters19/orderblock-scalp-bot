@@ -11,11 +11,11 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 # ---------------------------------------------------------------------------
-# Alpaca API credentials (paper trading keys are fine — we only READ data)
+# Alpaca API credentials
 # ---------------------------------------------------------------------------
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
-ALPACA_PAPER = True  # Keep True — this bot only reads market data, never trades
+ALPACA_PAPER = True  # Always True unless you explicitly understand the risk
 
 # ---------------------------------------------------------------------------
 # Telegram (reuse the same bot/chat you already set up for the Polymarket bot)
@@ -74,3 +74,36 @@ ACCOUNT_EQUITY = float(os.environ.get("ACCOUNT_EQUITY", 100_000))  # paper acct 
 RISK_PER_TRADE_PCT = 1.0  # % of account equity risked per trade idea
 MIN_RISK_DOLLARS = 0.75   # skip signals where SL distance < this (filters low-price noise)
 SYMBOL_COOLDOWN_MINUTES = 60  # don't re-alert the same symbol within this window
+
+# ---------------------------------------------------------------------------
+# Auto-execution (DISABLED by default — read every comment before enabling)
+# ---------------------------------------------------------------------------
+
+# Master switch. When False, the bot alerts only — no orders are ever placed.
+AUTO_EXECUTE_ENABLED = os.environ.get("AUTO_EXECUTE_ENABLED", "false").lower() == "true"
+
+# "paper" = Alpaca paper account (safe to test).
+# "live"  = real money. Requires LIVE_TRADING_CONFIRMED = True as a second
+#           explicit opt-in. The bot refuses to trade live unless BOTH flags
+#           are set — flipping one alone does nothing.
+TRADING_MODE = os.environ.get("TRADING_MODE", "paper").lower()
+
+# Second confirmation required for live trading. Must be explicitly set to
+# True in code (not via env var) to prevent accidental live execution.
+# DO NOT change this to True unless you fully understand the consequences.
+LIVE_TRADING_CONFIRMED: bool = False
+
+# Hard cap on open positions at any one time (checked live via Alpaca API).
+MAX_CONCURRENT_POSITIONS = int(os.environ.get("MAX_CONCURRENT_POSITIONS", 5))
+
+# Hard cap on NEW positions opened in a single trading day.
+MAX_DAILY_TRADES = int(os.environ.get("MAX_DAILY_TRADES", 10))
+
+# Kill switch: if this file exists the executor skips all order submissions.
+# Telegram alerts still fire. Create the file to halt; delete it to resume.
+#   touch .trading_halted     # halt
+#   rm .trading_halted         # resume
+KILL_SWITCH_PATH = os.path.join(os.path.dirname(__file__), ".trading_halted")
+
+# Persistent trade log (one JSON record per line).
+TRADE_LOG_PATH = os.path.join(os.path.dirname(__file__), "trade_log.jsonl")

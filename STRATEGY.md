@@ -6,8 +6,9 @@ This is a mechanical rules-based implementation of Smart Money Concepts
 (SMC) / order block trading, in the style taught by YouTube channel
 **The Trading Geek (Brad Goh)**. It scans stocks, detects valid order
 block zones, and sends a Telegram alert when price taps a zone with
-lower-timeframe confirmation. **It only reads data and alerts — it never
-places trades.**
+lower-timeframe confirmation. By default it is alert-only; it can
+optionally auto-submit bracket orders via Alpaca (paper account only
+by default — see Auto-Execution section below).
 
 ## Core concept: what is an order block?
 
@@ -72,26 +73,59 @@ Both tiers run through the same order-block/BOS logic every 5 minutes.
 
 ## Data & alerting
 
-- **Market data**: Alpaca (free real-time IEX feed on a paper account —
-  read-only, no trading).
+- **Market data**: Alpaca (free real-time IEX feed on a paper account).
 - **Alerts**: Telegram bot/chat (reused from an existing Polymarket bot).
 - **Dedup**: each unique zone (symbol + direction + formation time +
-  price) is only alerted once.
+  price) is only alerted once per bot lifetime, plus a 60-minute
+  per-symbol cooldown so the same symbol can't spam across zones.
+
+## Auto-Execution
+
+`trade_executor.py` can submit a bracket order automatically after each
+valid alert. It is disabled by default (`AUTO_EXECUTE_ENABLED = False`).
+
+### Order structure
+
+| Leg | Type | Price |
+|---|---|---|
+| Entry | Limit (DAY) | OTE-mid price |
+| Stop-loss | Stop | Zone far side − 0.25 × ATR |
+| Take-profit | Limit | 3R target (TP2) |
+
+TP1 (2R) is shown in the Telegram alert as informational only — not an
+automatic partial close. The bracket exits the full position at TP2 or SL.
+
+### Safety controls (all enforced before any order submission)
+
+1. **Master switch** — `AUTO_EXECUTE_ENABLED` must be `True` (default `False`).
+2. **Mode check** — `TRADING_MODE` must be `"paper"` unless `LIVE_TRADING_CONFIRMED = True`
+   is **also** explicitly set in `config.py` (not via env var). Two separate opt-ins
+   required for live; flipping one alone does nothing.
+3. **Kill switch** — if the file `.trading_halted` exists on disk, all order
+   submission is skipped. Telegram alerts still fire. `touch .trading_halted`
+   to halt; `rm .trading_halted` to resume.
+4. **`MAX_CONCURRENT_POSITIONS`** — checked live via Alpaca API; skips if at cap.
+5. **`MAX_DAILY_TRADES`** — hard cap on new positions per UTC trading day.
+
+All submissions, skips, and errors are logged to `trade_log.jsonl`.
 
 ## Repo structure
 
 ```
-config.py           — all tunable parameters (timeframes, ATR multiplier,
-                       OTE band, watchlist filters, scan interval)
-structure.py         — swing detection, BOS/CHoCH labeling, ATR
-order_blocks.py      — order block detection, mitigation, OTE zone math
-data_feed.py         — Alpaca historical/snapshot data wrapper
-market_universe.py   — S&P 500 + Nasdaq 100 list, movers screener
-telegram_alert.py     — alert formatting and sending
-main.py               — live scanner loop (reads data, alerts only)
+config.py            — all tunable parameters (timeframes, ATR multiplier,
+                        OTE band, watchlist filters, scan interval,
+                        auto-execution flags and safety limits)
+structure.py          — swing detection, BOS/CHoCH labeling, ATR
+order_blocks.py       — order block detection, mitigation, OTE zone math
+data_feed.py          — Alpaca historical/snapshot data wrapper
+market_universe.py    — S&P 500 + Nasdaq 100 list, movers screener
+telegram_alert.py     — alert formatting, sending, shared position sizing
+trade_executor.py     — optional bracket order submission (Alpaca Trading API)
+main.py               — live scanner loop (detect → alert → optionally execute)
 backtest_engine.py    — walk-forward simulation (tap → confirm → win/loss/timeout)
-backtest.py            — CLI for backtesting (Alpaca or CSV mode)
-plot_ob_zones.py        — renders candlestick chart with zones + OTE bands overlaid
+backtest.py           — CLI for backtesting (Alpaca or CSV mode)
+plot_ob_zones.py      — renders candlestick chart with zones + OTE bands overlaid
+trade_log.jsonl       — persistent record of every order attempt (created at runtime)
 requirements.txt, .env.example, ob-scalp-bot.service — deployment
 ```
 

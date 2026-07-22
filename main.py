@@ -27,9 +27,10 @@ from data_feed import DataFeed
 from order_blocks import find_order_blocks, OrderBlock
 from structure import label_structure
 from market_universe import get_core_watchlist, get_movers
-from telegram_alert import send_alert, format_ob_alert, calc_ob_levels
+from telegram_alert import send_alert, format_ob_alert, calc_ob_levels, calc_position_size
 import tv_queue
 import tv_draw
+import trade_executor
 
 _SEEN_PATH = os.path.join(os.path.dirname(__file__), ".seen_alerts.json")
 _COOLDOWN_PATH = os.path.join(os.path.dirname(__file__), ".symbol_cooldown.json")
@@ -155,7 +156,23 @@ def scan_symbol(
             if lvl["risk"] < config.MIN_RISK_DOLLARS:
                 continue  # SL too tight — not worth the commission/spread
 
-            msg = format_ob_alert(ob, tier=tier, confirm_tf_event=confirm_event)
+            # --- optional auto-execution ---
+            exec_result: dict | None = None
+            if config.AUTO_EXECUTE_ENABLED:
+                shares = calc_position_size(lvl["risk"])
+                exec_result = trade_executor.submit_bracket_order(
+                    ob=ob,
+                    entry=lvl["entry"],
+                    sl=lvl["sl"],
+                    tp2=lvl["tp2"],
+                    shares=shares,
+                )
+
+            msg = format_ob_alert(
+                ob, tier=tier,
+                confirm_tf_event=confirm_event,
+                exec_result=exec_result,
+            )
             send_alert(msg)
             tv_queue.push_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
             tv_draw.draw_signal(ob, lvl["entry"], lvl["sl"], lvl["tp1"], lvl["tp2"])
